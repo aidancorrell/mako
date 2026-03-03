@@ -15,9 +15,11 @@ RUN uv sync --frozen --no-dev
 # --- Runtime stage ---
 FROM python:3.12-slim
 
-# Create non-root user
-RUN groupadd --gid 1000 mako && \
-    useradd --uid 1000 --gid mako --shell /usr/sbin/nologin mako
+# Create non-root user (UID/GID 1003 matches VPS host mako user)
+ARG MAKO_UID=1003
+ARG MAKO_GID=1003
+RUN groupadd --gid ${MAKO_GID} mako && \
+    useradd --uid ${MAKO_UID} --gid mako --shell /usr/sbin/nologin mako
 
 # Install only the binaries we need for the shell tool allowlist
 RUN apt-get update && \
