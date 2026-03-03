@@ -1,0 +1,61 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1a1a2e', 'primaryTextColor': '#e0e0e0', 'primaryBorderColor': '#4a9eff', 'lineColor': '#4a9eff', 'secondaryColor': '#16213e', 'tertiaryColor': '#0f3460', 'background': '#0d1117', 'mainBkg': '#1a1a2e', 'nodeBorder': '#4a9eff', 'clusterBkg': '#16213e', 'clusterBorder': '#4a9eff', 'titleColor': '#e0e0e0', 'edgeLabelBackground': '#1a1a2e'}}}%%
+
+flowchart TB
+    subgraph Channels["📡 Channels"]
+        CLI["CLI REPL"]
+        TG["Telegram Bot"]
+        CRON["⏰ Cron Scheduler"]
+    end
+
+    subgraph Agent["🔄 Agent Loop · ReAct"]
+        CTX["Context Assembler<br/><i>SOUL.md + MEMORY.md + History</i>"]
+        LLM["LLM Provider<br/><i>Gemini Flash · Claude Sonnet</i>"]
+        DECIDE{Tool calls?}
+        RESPOND["💬 Final Response"]
+    end
+
+    subgraph Security["🔒 SecurityGuard · Gates Every Tool Call"]
+        ALLOW["Command Allowlist"]
+        JAIL["Workspace Jail"]
+        SSRF["SSRF Protection"]
+        RATE["Rate Limiting"]
+        AUDIT["Audit Log"]
+    end
+
+    subgraph Tools["🔧 Tools"]
+        WEB["web_fetch<br/><i>HTTPS · SSRF-protected</i>"]
+        SHELL["shell<br/><i>allowlisted commands</i>"]
+        FS["read/write file<br/><i>workspace-jailed</i>"]
+        MCP["MCP Client<br/><i>any MCP server</i>"]
+    end
+
+    subgraph Memory["🧠 Memory"]
+        SQL["SQLite History<br/><i>WAL mode</i>"]
+        MD["Personality Files<br/><i>SOUL · IDENTITY · MEMORY</i>"]
+        COMPACT["Context Compaction<br/><i>auto-summarize at token limit</i>"]
+    end
+
+    subgraph Docker["🐳 Docker · Hardened Container"]
+        RO["Read-only rootfs"]
+        NONROOT["Non-root user"]
+        CAPS["All caps dropped"]
+        NET["HTTPS-only egress"]
+    end
+
+    CLI --> CTX
+    TG --> CTX
+    CRON --> CTX
+    CTX --> LLM
+    LLM --> DECIDE
+    DECIDE -- No --> RESPOND
+    DECIDE -- Yes --> Security
+    Security --> Tools
+    Tools -- result --> LLM
+    Memory -.-> CTX
+
+    style Channels fill:#0f3460,stroke:#4a9eff,color:#e0e0e0
+    style Agent fill:#1a1a2e,stroke:#4a9eff,color:#e0e0e0
+    style Security fill:#3d0000,stroke:#ff4444,color:#e0e0e0
+    style Tools fill:#16213e,stroke:#4a9eff,color:#e0e0e0
+    style Memory fill:#1a1a2e,stroke:#4a9eff,color:#e0e0e0
+    style Docker fill:#0a1628,stroke:#4a9eff,color:#e0e0e0
