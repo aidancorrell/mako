@@ -21,6 +21,9 @@ jobs.json
 # Build journal (personal deployment details)
 PLAN.md
 
+# Personal drafts
+docs/linkedin-post.md
+
 # Audit logs and runtime data
 workspace/audit.log
 data/
