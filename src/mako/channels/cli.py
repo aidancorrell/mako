@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 async def run_cli(agent: Agent, store: ConversationStore) -> None:
     """Run an interactive CLI chat session with persistent history."""
-    print("Mako CLI — type 'quit' or Ctrl+C to exit")
+    print("🦈 Mako CLI — type 'quit' or Ctrl+C to exit")
     print("  /new     — start a new session")
     print("  /history — list past sessions\n")
 
