@@ -24,6 +24,8 @@ class Message:
     tool_calls: list[ToolCall] = field(default_factory=list)
     tool_call_id: str = ""  # For tool result messages
     name: str = ""  # Tool name for tool result messages
+    raw_content: list[dict] | None = None  # Provider-specific content blocks (for multi-turn pass-through)
+    stop_reason: str = ""  # Provider stop reason (e.g., "end_turn", "pause_turn")
 
 
 class Provider(ABC):
