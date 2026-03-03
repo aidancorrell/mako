@@ -185,38 +185,32 @@ These aren't bolted on later. The security module is built in Phase 1, Docker is
 
 **Deliverable:** Message Mako on Telegram, get responses powered by Gemini or Claude.
 
-### Phase 4: Scheduler + Morning Briefing
-**Goal:** Mako sends you a morning briefing, replacing OpenClaw's cron job.
+### Phase 4: Scheduler + Morning Briefing ⏭️ SKIPPED
+**Status:** Skipped for now — Gemini API quality insufficient for reliable scheduled jobs. Can revisit when switching to Claude as default provider.
 
-1. Implement `scheduler.py`:
-   - Load jobs from `jobs.json`
-   - Cron expression parsing (use `croniter` library)
-   - Run jobs as isolated agent sessions
-   - Deliver results to configured channel (Telegram)
-2. Create morning briefing job config — port your existing OpenClaw briefing prompt
-3. Update `main.py` — scheduler runs as background task alongside Telegram channel
-
-**Deliverable:** Mako sends you a morning briefing at 8 AM ET, just like OpenClaw does today.
-
-### Phase 5: MCP Client (Innovation Phase)
+### Phase 5: MCP Client (Innovation Phase) ✅ COMPLETE
 **Goal:** Connect Mako to the MCP ecosystem.
 
-1. Implement MCP client (JSON-RPC over stdio):
-   - Spawn MCP server as subprocess
-   - Discover available tools via `tools/list`
-   - Register MCP tools in Mako's tool registry
-   - Execute MCP tool calls and return results
-2. Test with an existing MCP server (e.g., your spark-sql-mcp-server)
-3. Add MCP server config to `config.py`
+1. ✅ Implement `tools/mcp.py` — MCP client (JSON-RPC 2.0 over stdio):
+   - `MCPClient` class: spawns MCP server subprocess, manages lifecycle
+   - Initialize handshake (protocolVersion 2024-11-05)
+   - Discover tools via `tools/list`
+   - Execute tool calls via `tools/call`, parse content blocks
+   - Async reader task for JSON-RPC responses + server notifications
+   - Timeout handling (30s per request)
+2. ✅ `connect_mcp_servers()` — connects to all configured servers, registers tools into Mako's registry with `mcp_{server}_{tool}` naming
+3. ✅ Updated `config.py` — `load_mcp_servers()` loads from `mcp_servers.json`
+4. ✅ Updated `main.py` — MCP connection on startup, cleanup on shutdown
+5. ✅ Created `mcp_servers.example.json` — example config
 
 **Deliverable:** Mako can connect to any MCP server and use its tools natively.
 
-### Phase 6: Deploy to VPS (Dockerized) — IN PROGRESS
+### Phase 6: Deploy to VPS (Dockerized) ✅ COMPLETE
 **Goal:** Mako runs as a containerized service alongside OpenClaw on the Oracle VPS.
 
 1. ✅ **Dockerfile** (multi-stage, security-hardened):
    - Build stage: `python:3.12-slim` + uv to install deps
-   - Runtime stage: `python:3.12-slim` with non-root user
+   - Runtime stage: `python:3.12-slim` with non-root user (UID 1003)
    - Only `curl` installed (allowlisted bin)
    - `HEALTHCHECK` for container monitoring
 2. ✅ **docker-compose.prod.yml** — production config:
@@ -228,12 +222,13 @@ These aren't bolted on later. The security module is built in Phase 1, Docker is
    - Memory limit 256MB, CPU limit 0.5
    - Env file: `/opt/mako.env`
 3. ✅ **docker-compose.yml** — dev config (relaxed for local testing)
-4. ✅ **Docker build verified locally**
-5. ✅ **Shell command hardening** — metacharacter rejection + exec (not shell) execution
-6. TODO: Create `mako` user on VPS
-7. TODO: Push repo to VPS, set up `/opt/mako.env`
-8. TODO: Systemd service
-9. TODO: iptables DOCKER-USER rules
+4. ✅ **Shell command hardening** — metacharacter rejection + exec (not shell) execution
+5. ✅ **Created `mako` user on VPS** (UID 1003, docker group)
+6. ✅ **GitHub repo** — private at github.com/aidancorrell/mako, deploy key on VPS
+7. ✅ **Secrets** — `/opt/mako.env` root-owned, 640, group=mako
+8. ✅ **iptables DOCKER-USER rules** — DNS (53), HTTP (80), HTTPS (443) allowed, all else dropped
+9. ✅ **Docker DNS fix** — `/etc/docker/daemon.json` with Google/Cloudflare DNS
+10. TODO: Systemd service for auto-start on boot (currently using `docker compose up -d` with `restart: unless-stopped`)
 
 **Deliverable:** Mako runs 24/7 in a hardened Docker container on your Oracle VPS.
 

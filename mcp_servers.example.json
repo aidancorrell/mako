@@ -1,0 +1,6 @@
+[
+    {
+        "name": "filesystem",
+        "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp/mako-sandbox"]
+    }
+]

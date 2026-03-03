@@ -7,7 +7,7 @@ from pathlib import Path
 
 from mako.agent import Agent
 from mako.channels.cli import run_cli
-from mako.config import load_settings
+from mako.config import load_mcp_servers, load_settings
 from mako.context import ContextAssembler
 from mako.memory.store import ConversationStore
 from mako.providers.base import Provider
@@ -51,7 +51,7 @@ def create_provider(settings) -> Provider:
         )
 
 
-def create_agent(settings) -> tuple[Agent, ConversationStore]:
+def create_agent(settings) -> tuple[Agent, ConversationStore, ToolRegistry]:
     """Wire up all components and create the agent."""
     # Security — the foundation
     security = SecurityGuard(
@@ -71,7 +71,7 @@ def create_agent(settings) -> tuple[Agent, ConversationStore]:
     # Tool registry
     registry = ToolRegistry(security)
 
-    # Register tools
+    # Register built-in tools
     registry.register(
         name=web_fetch.TOOL_NAME,
         description=web_fetch.TOOL_DESCRIPTION,
@@ -99,7 +99,17 @@ def create_agent(settings) -> tuple[Agent, ConversationStore]:
         context=context,
     )
 
-    return agent, store
+    return agent, store, registry
+
+
+async def connect_mcp(settings, registry: ToolRegistry) -> list:
+    """Connect to configured MCP servers and register their tools."""
+    servers = load_mcp_servers(settings.mcp_config_path)
+    if not servers:
+        return []
+
+    from mako.tools.mcp import connect_mcp_servers
+    return await connect_mcp_servers(servers, registry)
 
 
 async def run_telegram_mode(agent: Agent, store: ConversationStore, settings) -> None:
@@ -133,7 +143,10 @@ async def run_telegram_mode(agent: Agent, store: ConversationStore, settings) ->
 async def async_main() -> None:
     setup_logging()
     settings = load_settings()
-    agent, store = create_agent(settings)
+    agent, store, registry = create_agent(settings)
+
+    # Connect MCP servers (if configured)
+    mcp_clients = await connect_mcp(settings, registry)
 
     try:
         if "--telegram" in sys.argv:
@@ -141,6 +154,9 @@ async def async_main() -> None:
         else:
             await run_cli(agent, store)
     finally:
+        # Clean up MCP servers
+        for client in mcp_clients:
+            await client.stop()
         store.close()
 
 

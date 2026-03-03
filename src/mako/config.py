@@ -1,9 +1,13 @@
 """Configuration loaded from environment variables via pydantic-settings."""
 
+import json
+import logging
 from pathlib import Path
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -29,6 +33,9 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_allowed_chat_ids_str: str = ""
 
+    # MCP servers config file path (Phase 5)
+    mcp_config_path: Path = Path("mcp_servers.json")
+
     @property
     def safe_bins(self) -> list[str]:
         return [b.strip() for b in self.safe_bins_str.split(",") if b.strip()]
@@ -47,3 +54,27 @@ class Settings(BaseSettings):
 
 def load_settings() -> Settings:
     return Settings()  # type: ignore[call-arg]
+
+
+def load_mcp_servers(config_path: Path) -> list[dict]:
+    """Load MCP server configurations from a JSON file.
+
+    Expected format:
+    [
+        {
+            "name": "my-server",
+            "command": ["npx", "-y", "some-mcp-server"],
+            "env": {"KEY": "value"}  // optional
+        }
+    ]
+    """
+    if not config_path.exists():
+        return []
+    try:
+        with open(config_path) as f:
+            servers = json.load(f)
+        logger.info("Loaded %d MCP server config(s) from %s", len(servers), config_path)
+        return servers
+    except Exception as e:
+        logger.error("Failed to load MCP config from %s: %s", config_path, e)
+        return []
