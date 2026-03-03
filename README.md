@@ -1,4 +1,4 @@
-# Mako
+# 🦈 Mako
 
 A minimal AI agent framework built from scratch in ~2,500 lines of Python.
 
