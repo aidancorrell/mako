@@ -1,7 +1,7 @@
 services:
   mako:
     build: .
-    env_file: /opt/mako.env
+    env_file: .env
     volumes:
       - ./workspace:/app/workspace
       - ./data:/app/data

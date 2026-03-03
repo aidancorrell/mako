@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A minimal AI agent framework built from scratch"
 readme = "README.md"
 authors = [
-    { name = "Aidan", email = "aidan.c.correll@gmail.com" }
+    { name = "Aidan Correll" }
 ]
 requires-python = ">=3.12"
 dependencies = [

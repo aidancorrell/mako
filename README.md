@@ -2,7 +2,7 @@
 
 A minimal AI agent framework built from scratch in ~2,500 lines of Python.
 
-Mako is a personal AI agent that runs on an Oracle Cloud ARM VPS, accessible via Telegram. It's designed as a learning exercise — small enough to read end-to-end and fully understand, with security baked in from line 1.
+Mako is a personal AI agent accessible via Telegram or CLI. It's designed as a learning exercise — small enough to read end-to-end and fully understand, with security baked in from line 1.
 
 ## Architecture
 
@@ -79,10 +79,10 @@ Mako is a personal AI agent that runs on an Oracle Cloud ARM VPS, accessible via
 │  └──────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 
-Deployment (Oracle Cloud ARM VPS):
+Deployment (Docker):
 ┌──────────────────────────────────────────┐
 │  Docker Container                        │
-│  read-only rootfs, non-root user (1003)  │
+│  read-only rootfs, non-root user         │
 │  no-new-privileges, all caps dropped     │
 │  256MB RAM / 0.5 CPU limit               │
 │  Volumes: workspace/ + data/ + audit/    │
@@ -90,7 +90,7 @@ Deployment (Oracle Cloud ARM VPS):
 │  iptables: DNS(53) HTTP(80) HTTPS(443)   │
 │  Everything else → DROP                  │
 ├──────────────────────────────────────────┤
-│  Secrets: /opt/mako.env (root:mako 640)  │
+│  Secrets: .env (not in repo)             │
 └──────────────────────────────────────────┘
 ```
 
@@ -220,7 +220,7 @@ Security is the foundation, not a bolt-on:
 
 ## Deployment
 
-Runs as a Docker container on an Oracle Cloud ARM VPS:
+Runs as a Docker container:
 
 ```bash
 # Production (hardened)

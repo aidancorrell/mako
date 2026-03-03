@@ -15,9 +15,9 @@ RUN uv sync --frozen --no-dev
 # --- Runtime stage ---
 FROM python:3.12-slim
 
-# Create non-root user (UID/GID 1003 matches VPS host mako user)
-ARG MAKO_UID=1003
-ARG MAKO_GID=1003
+# Create non-root user (override UID/GID to match host user for volume permissions)
+ARG MAKO_UID=1000
+ARG MAKO_GID=1000
 RUN groupadd --gid ${MAKO_GID} mako && \
     useradd --uid ${MAKO_UID} --gid mako --shell /usr/sbin/nologin mako
 
