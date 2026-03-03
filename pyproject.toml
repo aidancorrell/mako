@@ -1,0 +1,23 @@
+[project]
+name = "mako"
+version = "0.1.0"
+description = "A minimal AI agent framework built from scratch"
+readme = "README.md"
+authors = [
+    { name = "Aidan", email = "aidan.c.correll@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "anthropic>=0.40",
+    "python-telegram-bot>=21.0",
+]
+
+[project.scripts]
+mako = "mako.main:main"
+
+[build-system]
+requires = ["uv_build>=0.9.18,<0.10.0"]
+build-backend = "uv_build"

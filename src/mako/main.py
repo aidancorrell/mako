@@ -1,0 +1,155 @@
+"""Entry point for Mako."""
+
+import asyncio
+import logging
+import sys
+from pathlib import Path
+
+from mako.agent import Agent
+from mako.channels.cli import run_cli
+from mako.config import load_settings
+from mako.context import ContextAssembler
+from mako.memory.store import ConversationStore
+from mako.providers.base import Provider
+from mako.security import SecurityGuard
+from mako.tools import shell, web_fetch, workspace
+from mako.tools.registry import ToolRegistry
+
+
+def setup_logging() -> None:
+    level = logging.DEBUG if "--debug" in sys.argv else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    # Quiet noisy libraries
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("anthropic").setLevel(logging.WARNING)
+
+
+def create_provider(settings) -> Provider:
+    """Create the configured LLM provider."""
+    if settings.default_provider == "claude":
+        if not settings.anthropic_api_key:
+            print("Error: MAKO_ANTHROPIC_API_KEY not set")
+            sys.exit(1)
+        from mako.providers.claude import ClaudeProvider
+        return ClaudeProvider(
+            api_key=settings.anthropic_api_key,
+            model=settings.claude_model,
+        )
+    else:
+        if not settings.gemini_api_key:
+            print("Error: MAKO_GEMINI_API_KEY not set")
+            sys.exit(1)
+        from mako.providers.gemini import GeminiProvider
+        return GeminiProvider(
+            api_key=settings.gemini_api_key,
+            model=settings.gemini_model,
+        )
+
+
+def create_agent(settings) -> tuple[Agent, ConversationStore]:
+    """Wire up all components and create the agent."""
+    # Security — the foundation
+    security = SecurityGuard(
+        workspace_path=settings.workspace_path,
+        safe_bins=settings.safe_bins,
+        max_tool_calls_per_turn=settings.max_tool_calls_per_turn,
+        max_tool_calls_per_minute=settings.max_tool_calls_per_minute,
+        max_iterations=settings.max_iterations,
+    )
+
+    # Provider
+    provider = create_provider(settings)
+
+    # Context assembler (personality + memory)
+    context = ContextAssembler(settings.workspace_path)
+
+    # Tool registry
+    registry = ToolRegistry(security)
+
+    # Register tools
+    registry.register(
+        name=web_fetch.TOOL_NAME,
+        description=web_fetch.TOOL_DESCRIPTION,
+        parameters=web_fetch.TOOL_PARAMETERS,
+        handler=web_fetch.web_fetch,
+    )
+    registry.register(
+        name=shell.TOOL_NAME,
+        description=shell.TOOL_DESCRIPTION,
+        parameters=shell.TOOL_PARAMETERS,
+        handler=shell.shell,
+    )
+    workspace.register_workspace_tools(registry, settings.workspace_path)
+
+    # Conversation store (SQLite)
+    data_dir = settings.workspace_path.parent / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    store = ConversationStore(data_dir / "conversations.db")
+
+    agent = Agent(
+        provider=provider,
+        registry=registry,
+        security=security,
+        settings=settings,
+        context=context,
+    )
+
+    return agent, store
+
+
+async def run_telegram_mode(agent: Agent, store: ConversationStore, settings) -> None:
+    """Run Mako in Telegram bot mode."""
+    if not settings.telegram_bot_token:
+        print("Error: MAKO_TELEGRAM_BOT_TOKEN not set")
+        sys.exit(1)
+
+    from mako.channels.telegram import TelegramChannel
+
+    allowed = settings.telegram_allowed_chat_ids or None
+    channel = TelegramChannel(
+        token=settings.telegram_bot_token,
+        agent=agent,
+        store=store,
+        allowed_chat_ids=allowed,
+    )
+
+    await channel.run()
+
+    # Keep running until interrupted
+    stop_event = asyncio.Event()
+    try:
+        await stop_event.wait()
+    except asyncio.CancelledError:
+        pass
+    finally:
+        await channel.stop()
+
+
+async def async_main() -> None:
+    setup_logging()
+    settings = load_settings()
+    agent, store = create_agent(settings)
+
+    try:
+        if "--telegram" in sys.argv:
+            await run_telegram_mode(agent, store, settings)
+        else:
+            await run_cli(agent, store)
+    finally:
+        store.close()
+
+
+def main() -> None:
+    try:
+        asyncio.run(async_main())
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()

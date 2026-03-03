@@ -1,0 +1,30 @@
+services:
+  mako:
+    build: .
+    env_file: /opt/mako.env
+    volumes:
+      - ./workspace:/app/workspace
+      - ./data:/app/data
+    restart: unless-stopped
+
+    # Security hardening
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW  # Required for curl DNS resolution
+
+    # Resource limits
+    mem_limit: 256m
+    cpus: 0.5
+
+    # Logging
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
