@@ -5,6 +5,7 @@ services:
     volumes:
       - ./workspace:/app/workspace
       - ./data:/app/data
+      - ./audit:/app/audit
     restart: unless-stopped
 
     # Security hardening
@@ -15,8 +16,7 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    cap_add:
-      - NET_RAW  # Required for curl DNS resolution
+    # No cap_add needed — curl removed from allowlist
 
     # Resource limits
     mem_limit: 256m

@@ -15,6 +15,8 @@ from mako.security import SecurityGuard
 from mako.tools import shell, web_fetch, workspace
 from mako.tools.registry import ToolRegistry
 
+logger = logging.getLogger(__name__)
+
 
 def setup_logging() -> None:
     level = logging.DEBUG if "--debug" in sys.argv else logging.INFO
@@ -104,6 +106,20 @@ def create_agent(settings) -> tuple[Agent, ConversationStore, ToolRegistry]:
 
 async def connect_mcp(settings, registry: ToolRegistry) -> list:
     """Connect to configured MCP servers and register their tools."""
+    # Ensure MCP config is not inside the workspace (writable by the agent)
+    mcp_path = settings.mcp_config_path.resolve()
+    workspace_resolved = settings.workspace_path.resolve()
+    try:
+        mcp_path.relative_to(workspace_resolved)
+        logger.warning(
+            "MCP config '%s' is inside workspace — ignoring for security. "
+            "Move it outside the workspace directory.",
+            mcp_path,
+        )
+        return []
+    except ValueError:
+        pass  # Good — it's outside the workspace
+
     servers = load_mcp_servers(settings.mcp_config_path)
     if not servers:
         return []
@@ -120,7 +136,14 @@ async def run_telegram_mode(agent: Agent, store: ConversationStore, settings) ->
 
     from mako.channels.telegram import TelegramChannel
 
-    allowed = settings.telegram_allowed_chat_ids or None
+    allowed = settings.telegram_allowed_chat_ids
+    if not allowed:
+        print(
+            "Error: MAKO_TELEGRAM_ALLOWED_CHAT_IDS_STR not set. "
+            "Refusing to start Telegram bot without an allowlist."
+        )
+        sys.exit(1)
+
     channel = TelegramChannel(
         token=settings.telegram_bot_token,
         agent=agent,

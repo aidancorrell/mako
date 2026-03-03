@@ -29,25 +29,36 @@ class GeminiProvider(Provider):
         messages: list[Message],
         tools: list[dict] | None = None,
     ) -> Message:
-        url = f"{GEMINI_API_URL}/{self.model}:generateContent?key={self.api_key}"
+        url = f"{GEMINI_API_URL}/{self.model}:generateContent"
 
         # Build Gemini request body
-        contents = self._build_contents(messages)
+        system_text, contents = self._build_contents(messages)
         body: dict[str, Any] = {"contents": contents}
+
+        if system_text:
+            body["system_instruction"] = {"parts": [{"text": system_text}]}
 
         if tools:
             body["tools"] = [{"function_declarations": self._convert_tools(tools)}]
 
         logger.debug("Gemini request: %d messages, %d tools", len(contents), len(tools or []))
 
-        resp = await self._client.post(url, json=body)
+        resp = await self._client.post(
+            url,
+            json=body,
+            headers={"x-goog-api-key": self.api_key},
+        )
         resp.raise_for_status()
         data = resp.json()
 
         return self._parse_response(data)
 
-    def _build_contents(self, messages: list[Message]) -> list[dict]:
-        """Convert our Message format to Gemini's contents format."""
+    def _build_contents(self, messages: list[Message]) -> tuple[str, list[dict]]:
+        """Convert our Message format to Gemini's contents format.
+
+        Returns (system_text, contents) — system text is passed via the
+        system_instruction API field, not injected into user messages.
+        """
         contents: list[dict] = []
         system_parts: list[str] = []
 
@@ -86,17 +97,8 @@ class GeminiProvider(Provider):
             if parts:
                 contents.append({"role": role, "parts": parts})
 
-        # Prepend system instruction if any
-        if system_parts and contents:
-            system_text = "\n\n".join(system_parts)
-            # Gemini uses systemInstruction at the top level, but for simplicity
-            # we prepend it to the first user message as context
-            if contents[0]["role"] == "user":
-                contents[0]["parts"].insert(0, {"text": f"[System Instructions]\n{system_text}\n[End System Instructions]\n\n"})
-            else:
-                contents.insert(0, {"role": "user", "parts": [{"text": system_text}]})
-
-        return contents
+        system_text = "\n\n".join(system_parts).strip()
+        return system_text, contents
 
     def _convert_tools(self, tools: list[dict]) -> list[dict]:
         """Convert OpenAI-style tool defs to Gemini function declarations."""

@@ -37,17 +37,21 @@ class SecurityGuard:
         self.max_tool_calls_per_minute = max_tool_calls_per_minute
         self.max_iterations = max_iterations
 
-        # Rate limiting state
-        self._turn_call_count = 0
-        self._minute_calls: deque[float] = deque()
+        # Rate limiting state — scoped per session to prevent cross-chat interference
+        self._turn_call_counts: dict[str, int] = {}
+        self._minute_calls: dict[str, deque[float]] = {}
+        self._current_session: str = "_default"
 
-        # Audit log path
-        self.audit_log_path = workspace_path / "audit.log"
+        # Audit log — stored outside workspace so the agent can't read/tamper with it
+        self._audit_dir = workspace_path.parent / "audit"
+        self._audit_dir.mkdir(parents=True, exist_ok=True)
+        self.audit_log_path = self._audit_dir / "audit.log"
         self.workspace_path.mkdir(parents=True, exist_ok=True)
 
-    def reset_turn(self) -> None:
+    def reset_turn(self, session_id: str = "_default") -> None:
         """Reset per-turn counters. Call at the start of each agent turn."""
-        self._turn_call_count = 0
+        self._current_session = session_id
+        self._turn_call_counts[session_id] = 0
 
     def check_iteration_limit(self, iteration: int) -> None:
         """Enforce max iterations per agent turn."""
@@ -58,7 +62,7 @@ class SecurityGuard:
             )
 
     # Shell metacharacters that enable chaining, piping, or subshell execution
-    SHELL_METACHARACTERS = set("|;&`$(){}!")
+    SHELL_METACHARACTERS = set("|;&`$(){}!\n\r\x00#")
 
     def validate_command(self, command: str) -> list[str]:
         """Validate a shell command against the allowlist.
@@ -121,28 +125,30 @@ class SecurityGuard:
             target.relative_to(self.workspace_path)
         except ValueError:
             raise SecurityError(
-                f"Path '{file_path}' resolves to '{target}' which is outside "
-                f"workspace '{self.workspace_path}'"
+                f"Path '{file_path}' is outside the workspace boundary."
             )
 
         return target
 
     def check_rate_limit(self) -> None:
         """Enforce rate limits (per-turn and per-minute)."""
-        # Per-turn limit
-        self._turn_call_count += 1
-        if self._turn_call_count > self.max_tool_calls_per_turn:
+        # Per-turn limit (scoped per session)
+        session = self._current_session
+        self._turn_call_counts[session] = self._turn_call_counts.get(session, 0) + 1
+        if self._turn_call_counts[session] > self.max_tool_calls_per_turn:
             raise SecurityError(
                 f"Rate limit: exceeded {self.max_tool_calls_per_turn} tool calls this turn"
             )
 
-        # Per-minute limit
+        # Per-minute limit (scoped per session)
         now = time.monotonic()
-        self._minute_calls.append(now)
-        # Evict calls older than 60 seconds
-        while self._minute_calls and (now - self._minute_calls[0]) > 60:
-            self._minute_calls.popleft()
-        if len(self._minute_calls) > self.max_tool_calls_per_minute:
+        if session not in self._minute_calls:
+            self._minute_calls[session] = deque()
+        session_minute = self._minute_calls[session]
+        session_minute.append(now)
+        while session_minute and (now - session_minute[0]) > 60:
+            session_minute.popleft()
+        if len(session_minute) > self.max_tool_calls_per_minute:
             raise SecurityError(
                 f"Rate limit: exceeded {self.max_tool_calls_per_minute} tool calls per minute"
             )
@@ -156,10 +162,18 @@ class SecurityGuard:
         reasoning: str | None = None,
     ) -> None:
         """Log a tool invocation to the audit log."""
+        # Truncate large argument values to prevent log bloat / sensitive data exposure
+        safe_args = {}
+        for k, v in args.items():
+            if isinstance(v, str) and len(v) > 200:
+                safe_args[k] = v[:200] + f"... [{len(v)} chars]"
+            else:
+                safe_args[k] = v
+
         entry = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "tool": tool_name,
-            "args": args,
+            "args": safe_args,
         }
         if result is not None:
             # Truncate long results in the audit log
@@ -176,6 +190,27 @@ class SecurityGuard:
         except OSError as e:
             logger.error("Failed to write audit log: %s", e)
 
+    # Protected files that cannot be written to (personality/memory injection prevention)
+    PROTECTED_PATHS = {"soul.md", "identity.md", "memory.md"}
+    PROTECTED_PREFIXES = ("memory/",)
+
+    def _is_protected_path(self, path: str) -> bool:
+        """Check if a path targets a protected personality/memory file.
+
+        Resolves the path relative to workspace to defeat ../ and ./ bypasses,
+        then does case-insensitive comparison to handle case-insensitive filesystems.
+        """
+        # Resolve to absolute, then get the relative-to-workspace portion
+        resolved = (self.workspace_path / path).resolve()
+        try:
+            relative = resolved.relative_to(self.workspace_path)
+        except ValueError:
+            return False  # Outside workspace — validate_path will catch this
+        normalized = str(relative).replace("\\", "/").lower()
+        if normalized in self.PROTECTED_PATHS:
+            return True
+        return any(normalized.startswith(p) for p in self.PROTECTED_PREFIXES)
+
     def pre_tool_call(self, tool_name: str, args: dict) -> None:
         """Run all pre-execution checks. Call this before every tool execution."""
         self.check_rate_limit()
@@ -185,3 +220,18 @@ class SecurityGuard:
             self.validate_command(args.get("command", ""))
         elif tool_name in ("read_file", "write_file"):
             self.validate_path(args.get("path", ""))
+
+        # Block writes to protected personality/memory files
+        if tool_name == "write_file":
+            path = args.get("path", "")
+            if self._is_protected_path(path):
+                raise SecurityError(
+                    f"Cannot write to protected file '{path}'. "
+                    "Personality and memory files are read-only."
+                )
+
+        # MCP tools: apply path validation to any argument that looks like a file path
+        if tool_name.startswith("mcp_"):
+            for key, value in args.items():
+                if isinstance(value, str) and ("path" in key.lower() or "file" in key.lower()):
+                    self.validate_path(value)

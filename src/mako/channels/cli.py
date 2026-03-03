@@ -21,7 +21,7 @@ async def run_cli(agent: Agent, store: ConversationStore) -> None:
 
     while True:
         try:
-            user_input = await asyncio.get_event_loop().run_in_executor(
+            user_input = await asyncio.get_running_loop().run_in_executor(
                 None, lambda: input("you> ")
             )
         except (EOFError, KeyboardInterrupt):

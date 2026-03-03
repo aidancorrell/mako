@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     max_iterations: int = 10
     max_tool_calls_per_turn: int = 20
     max_tool_calls_per_minute: int = 30
-    safe_bins_str: str = "curl,date"
+    safe_bins_str: str = "date"
 
     # Telegram (Phase 3)
     telegram_bot_token: str = ""

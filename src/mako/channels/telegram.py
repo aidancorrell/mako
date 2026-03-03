@@ -134,7 +134,9 @@ class TelegramChannel:
         await update.effective_chat.send_action("typing")
 
         try:
-            response = await self.agent.run(user_text, history=history)
+            response = await self.agent.run(
+                user_text, history=history, session_id=str(chat_id),
+            )
 
             # Persist to SQLite
             self.store.save_message(session_id, "user", user_text)
@@ -153,7 +155,7 @@ class TelegramChannel:
 
         except Exception as e:
             logger.error("Agent error for chat %d: %s", chat_id, e, exc_info=True)
-            await update.message.reply_text(f"Something went wrong: {e}")
+            await update.message.reply_text("Something went wrong. Please try again.")
 
     async def run(self) -> None:
         """Start the Telegram bot (long-polling)."""

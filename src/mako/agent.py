@@ -45,17 +45,23 @@ class Agent:
             keep_recent_messages=settings.keep_recent_messages,
         )
 
-    async def run(self, user_message: str, history: list[Message] | None = None) -> str:
+    async def run(
+        self,
+        user_message: str,
+        history: list[Message] | None = None,
+        session_id: str = "_default",
+    ) -> str:
         """Run the agent loop for a single user turn.
 
         Args:
             user_message: The user's input.
             history: Previous conversation messages (optional).
+            session_id: Unique session identifier for rate-limit scoping.
 
         Returns:
             The agent's final text response.
         """
-        self.security.reset_turn()
+        self.security.reset_turn(session_id)
 
         messages = self.context.build_messages(user_message, history)
         tool_schemas = self.registry.get_tool_schemas()
@@ -77,8 +83,9 @@ class Agent:
             messages.append(response)
 
             for tool_call in response.tool_calls:
-                logger.info(
-                    "Tool call: %s(%s)", tool_call.name,
+                logger.info("Tool call: %s(%s)", tool_call.name,
+                    ", ".join(tool_call.arguments.keys()))
+                logger.debug("Tool args: %s(%s)", tool_call.name,
                     ", ".join(f"{k}={v!r}" for k, v in tool_call.arguments.items()),
                 )
 

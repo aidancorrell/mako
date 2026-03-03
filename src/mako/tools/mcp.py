@@ -28,18 +28,36 @@ class MCPClient:
         self._request_id = 0
         self._pending: dict[int, asyncio.Future] = {}
         self._reader_task: asyncio.Task | None = None
+        self._stderr_task: asyncio.Task | None = None
+
+    @staticmethod
+    def _build_safe_env(extra_env: dict[str, str] | None) -> dict[str, str]:
+        """Build a sanitized environment for MCP subprocesses.
+
+        Inherits basic system vars but strips API keys and secrets.
+        """
+        import os
+        # Start with essential system vars only
+        safe_keys = {"PATH", "HOME", "USER", "LANG", "LC_ALL", "TERM", "SHELL", "TMPDIR"}
+        env = {k: v for k, v in os.environ.items() if k in safe_keys}
+        # Merge in any explicitly configured vars from mcp_servers.json
+        if extra_env:
+            env.update(extra_env)
+        return env
 
     async def start(self) -> None:
         """Spawn the MCP server subprocess."""
         logger.info("Starting MCP server '%s': %s", self.name, " ".join(self.command))
+        safe_env = self._build_safe_env(self.env)
         self._process = await asyncio.create_subprocess_exec(
             *self.command,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env=self.env,
+            env=safe_env,
         )
         self._reader_task = asyncio.create_task(self._read_responses())
+        self._stderr_task = asyncio.create_task(self._drain_stderr())
 
         # Initialize the MCP connection
         await self._send_request("initialize", {
@@ -53,6 +71,8 @@ class MCPClient:
 
     async def stop(self) -> None:
         """Stop the MCP server subprocess."""
+        if self._stderr_task:
+            self._stderr_task.cancel()
         if self._reader_task:
             self._reader_task.cancel()
         if self._process and self._process.returncode is None:
@@ -102,7 +122,7 @@ class MCPClient:
             "params": params,
         }
 
-        future: asyncio.Future = asyncio.get_event_loop().create_future()
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
         self._pending[req_id] = future
 
         await self._write_message(message)
@@ -171,6 +191,21 @@ class MCPClient:
             pass
         except Exception as e:
             logger.error("MCP '%s' reader error: %s", self.name, e)
+
+    async def _drain_stderr(self) -> None:
+        """Read and log stderr to prevent pipe buffer deadlock."""
+        if not self._process or not self._process.stderr:
+            return
+        try:
+            while True:
+                line = await self._process.stderr.readline()
+                if not line:
+                    break
+                logger.debug("MCP '%s' stderr: %s", self.name, line.decode(errors="replace").rstrip())
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error("MCP '%s' stderr reader error: %s", self.name, e)
 
 
 async def connect_mcp_servers(

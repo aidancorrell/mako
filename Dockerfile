@@ -21,10 +21,8 @@ ARG MAKO_GID=1003
 RUN groupadd --gid ${MAKO_GID} mako && \
     useradd --uid ${MAKO_UID} --gid mako --shell /usr/sbin/nologin mako
 
-# Install only the binaries we need for the shell tool allowlist
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl && \
-    rm -rf /var/lib/apt/lists/*
+# No extra binaries needed — default shell allowlist is "date" only.
+# The web_fetch tool handles URL fetching with SSRF protections.
 
 WORKDIR /app
 
@@ -38,7 +36,7 @@ ENV PYTHONPATH="/app/src"
 ENV PYTHONUNBUFFERED=1
 
 # Workspace and data directories (mounted as volumes)
-RUN mkdir -p /app/workspace /app/data && chown -R mako:mako /app/workspace /app/data
+RUN mkdir -p /app/workspace /app/data /app/audit && chown -R mako:mako /app/workspace /app/data /app/audit
 
 USER mako
 

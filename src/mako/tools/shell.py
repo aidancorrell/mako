@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 TOOL_NAME = "shell"
 TOOL_DESCRIPTION = (
     "Execute a shell command. Only allowlisted commands are permitted "
-    "(curl, date). "
-    "Use this for fetching URLs or checking the current time."
+    "(date by default). "
+    "Use this for checking the current time. Use the web_fetch tool for URLs."
 )
 TOOL_PARAMETERS = {
     "type": "object",
