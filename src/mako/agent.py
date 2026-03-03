@@ -7,6 +7,7 @@ import logging
 
 from mako.config import Settings
 from mako.context import ContextAssembler
+from mako.memory.compactor import ContextCompactor
 from mako.providers.base import Message, Provider
 from mako.security import SecurityGuard
 from mako.tools.registry import ToolRegistry
@@ -37,6 +38,12 @@ class Agent:
         self.security = security
         self.settings = settings
         self.context = context
+        self.compactor = ContextCompactor(
+            provider=provider,
+            context_limit_tokens=settings.context_limit_tokens,
+            compaction_trigger_ratio=settings.compaction_trigger_ratio,
+            keep_recent_messages=settings.keep_recent_messages,
+        )
 
     async def run(self, user_message: str, history: list[Message] | None = None) -> str:
         """Run the agent loop for a single user turn.
@@ -55,6 +62,9 @@ class Agent:
 
         for iteration in range(self.settings.max_iterations):
             self.security.check_iteration_limit(iteration)
+
+            if iteration == 0:
+                messages = await self.compactor.compact_if_needed(messages)
 
             logger.debug("Agent iteration %d", iteration)
             response = await self.provider.chat(messages, tools=tool_schemas or None)

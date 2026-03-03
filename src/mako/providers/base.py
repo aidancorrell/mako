@@ -29,6 +29,12 @@ class Message:
 class Provider(ABC):
     """Abstract interface for LLM providers."""
 
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Provider name (e.g. 'claude', 'gemini')."""
+        ...
+
     @abstractmethod
     async def chat(
         self,

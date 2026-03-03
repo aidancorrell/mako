@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     # MCP servers config file path (Phase 5)
     mcp_config_path: Path = Path("mcp_servers.json")
 
+    # Context compaction
+    context_limit_tokens: int = 200_000
+    compaction_trigger_ratio: float = 0.75
+    keep_recent_messages: int = 10
+
     @property
     def safe_bins(self) -> list[str]:
         return [b.strip() for b in self.safe_bins_str.split(",") if b.strip()]

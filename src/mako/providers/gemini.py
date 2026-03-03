@@ -20,6 +20,10 @@ class GeminiProvider(Provider):
         self.model = model
         self._client = httpx.AsyncClient(timeout=120)
 
+    @property
+    def name(self) -> str:
+        return "gemini"
+
     async def chat(
         self,
         messages: list[Message],

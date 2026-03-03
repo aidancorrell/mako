@@ -14,6 +14,10 @@ class ClaudeProvider(Provider):
         self.model = model
         self._client = anthropic.AsyncAnthropic(api_key=api_key)
 
+    @property
+    def name(self) -> str:
+        return "claude"
+
     async def chat(
         self,
         messages: list[Message],
