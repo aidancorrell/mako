@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # MCP servers config file path (Phase 5)
     mcp_config_path: Path = Path("mcp_servers.json")
 
+    # Scheduled jobs config
+    jobs_config_path: Path = Path("jobs.json")
+
     # Context compaction
     context_limit_tokens: int = 200_000
     compaction_trigger_ratio: float = 0.75

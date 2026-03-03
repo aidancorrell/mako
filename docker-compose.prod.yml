@@ -6,6 +6,7 @@ services:
       - ./workspace:/app/workspace
       - ./data:/app/data
       - ./audit:/app/audit
+      - ./jobs.json:/app/jobs.json:ro
     restart: unless-stopped
 
     # Security hardening

@@ -103,6 +103,7 @@ src/mako/
 ├── agent.py             # ReAct loop — the core
 ├── context.py           # Context assembly (personality + memory + history)
 ├── security.py          # SecurityGuard — gates every tool call
+├── scheduler.py         # Cron-like job scheduler (morning briefing, etc.)
 ├── providers/
 │   ├── base.py          # Abstract provider interface
 │   ├── gemini.py        # Google Gemini via REST API
@@ -120,6 +121,8 @@ src/mako/
     ├── store.py          # SQLite conversation history (WAL mode)
     ├── workspace.py      # Load personality/memory markdown files
     └── compactor.py      # Context compaction (auto-summarize old messages)
+
+jobs.json                # Scheduled job definitions (cron expressions)
 ```
 
 ## Quick Start
@@ -169,6 +172,33 @@ Configure MCP servers in `mcp_servers.json` (must be outside the workspace direc
     }
 ]
 ```
+
+### Scheduled Jobs
+
+Configure scheduled jobs in `jobs.json` (see `jobs.json.example`):
+
+```bash
+cp jobs.json.example jobs.json
+# Edit with your chat ID and prompts
+```
+
+```json
+{
+  "jobs": [
+    {
+      "name": "daily-briefing",
+      "enabled": true,
+      "cron": "0 8 * * *",
+      "tz": "America/New_York",
+      "chat_id": 123456789,
+      "timeout_seconds": 300,
+      "prompt": "Your prompt here..."
+    }
+  ]
+}
+```
+
+The scheduler runs alongside the Telegram bot, checking every 60 seconds for jobs that match the current time. Cron expressions use standard format: `minute hour day month weekday` (0=Sunday). Jobs are delivered via Telegram to the configured `chat_id`.
 
 ## Security
 

@@ -15,6 +15,9 @@ wheels/
 # Environment files
 .env
 
+# Job config (contains personal chat IDs and prompts)
+jobs.json
+
 # Audit logs and runtime data
 workspace/audit.log
 data/

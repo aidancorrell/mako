@@ -8,6 +8,7 @@ from pathlib import Path
 from mako.agent import Agent
 from mako.channels.cli import run_cli
 from mako.config import load_mcp_servers, load_settings
+from mako.scheduler import Scheduler, load_jobs
 from mako.context import ContextAssembler
 from mako.memory.store import ConversationStore
 from mako.providers.base import Provider
@@ -153,6 +154,16 @@ async def run_telegram_mode(agent: Agent, store: ConversationStore, settings) ->
 
     await channel.run()
 
+    # Start scheduler for cron jobs (uses the bot to deliver messages)
+    jobs = load_jobs(settings.jobs_config_path)
+    scheduler = Scheduler(
+        jobs=jobs,
+        agent=agent,
+        bot=channel._app.bot,
+        store=store,
+    )
+    await scheduler.start()
+
     # Keep running until interrupted
     stop_event = asyncio.Event()
     try:
@@ -160,6 +171,7 @@ async def run_telegram_mode(agent: Agent, store: ConversationStore, settings) ->
     except asyncio.CancelledError:
         pass
     finally:
+        await scheduler.stop()
         await channel.stop()
 
 

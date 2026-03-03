@@ -1,0 +1,13 @@
+{
+  "jobs": [
+    {
+      "name": "example-daily-briefing",
+      "enabled": false,
+      "cron": "0 8 * * *",
+      "tz": "America/New_York",
+      "chat_id": 123456789,
+      "timeout_seconds": 300,
+      "prompt": "Give me a brief summary of today's top tech news. Use web_fetch to check https://news.ycombinator.com for current stories. Format with emoji headers and keep it scannable."
+    }
+  ]
+}
