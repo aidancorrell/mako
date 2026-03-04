@@ -83,6 +83,7 @@ class GeminiProvider(Provider):
             role = "user" if msg.role == "user" else "model"
             parts: list[dict] = []
 
+            # Ignore raw_content (Claude-specific server-side tool blocks)
             if msg.content:
                 parts.append({"text": msg.content})
 
