@@ -1,6 +1,10 @@
 services:
   mako:
-    build: .
+    build:
+      context: .
+      args:
+        MAKO_UID: ${MAKO_UID:-1000}
+        MAKO_GID: ${MAKO_GID:-1000}
     env_file: .env
     volumes:
       - ./workspace:/app/workspace
