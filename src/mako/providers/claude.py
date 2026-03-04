@@ -1,11 +1,13 @@
 """Claude provider — calls Anthropic API via the official SDK.
 
-Supports Anthropic's server-side web tools (web_search, web_fetch) which run
-on Anthropic's infrastructure and return results within the same API response.
-These are separate from Mako's local tools and bypass SecurityGuard entirely
-since no local execution occurs.
+Supports Anthropic's server-side web_search tool which runs on Anthropic's
+infrastructure and returns results within the same API response. This is
+separate from Mako's local tools and bypasses SecurityGuard entirely since
+no local execution occurs. URL fetching uses Mako's local web_fetch tool
+(with SSRF protections) rather than the server-side variant.
 """
 
+import asyncio
 import logging
 
 import anthropic
@@ -15,6 +17,8 @@ from .base import Message, Provider, ToolCall
 logger = logging.getLogger(__name__)
 
 MAX_PAUSE_CONTINUATIONS = 5
+MAX_RETRIES = 3
+RETRY_BASE_DELAY = 60  # seconds — rate limit window is per-minute
 
 
 class ClaudeProvider(Provider):
@@ -23,11 +27,9 @@ class ClaudeProvider(Provider):
         api_key: str,
         model: str = "claude-sonnet-4-20250514",
         web_search: bool = False,
-        web_fetch: bool = False,
     ) -> None:
         self.model = model
         self.web_search = web_search
-        self.web_fetch = web_fetch
         self._client = anthropic.AsyncAnthropic(api_key=api_key)
 
     @property
@@ -90,12 +92,6 @@ class ClaudeProvider(Provider):
                 "name": "web_search",
                 "max_uses": 5,
             })
-        if self.web_fetch:
-            api_tools.append({
-                "type": "web_fetch_20250910",
-                "name": "web_fetch",
-                "max_uses": 5,
-            })
 
         # Build API call kwargs
         kwargs: dict = {
@@ -110,7 +106,7 @@ class ClaudeProvider(Provider):
 
         logger.debug("Claude request: %d messages, %d tools", len(conversation), len(api_tools))
 
-        response = await self._client.messages.create(**kwargs)
+        response = await self._api_call_with_retry(**kwargs)
 
         # Handle pause_turn: the API paused a long-running turn, continue it
         continuations = 0
@@ -122,7 +118,7 @@ class ClaudeProvider(Provider):
                 "content": _serialize_content(response.content),
             })
             kwargs["messages"] = conversation
-            response = await self._client.messages.create(**kwargs)
+            response = await self._api_call_with_retry(**kwargs)
 
         if response.stop_reason == "pause_turn":
             logger.warning(
@@ -131,6 +127,22 @@ class ClaudeProvider(Provider):
             )
 
         return self._parse_response(response)
+
+    async def _api_call_with_retry(self, **kwargs) -> anthropic.types.Message:
+        """Call the API with retry + backoff on 429 rate limit errors."""
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                return await self._client.messages.create(**kwargs)
+            except anthropic.RateLimitError:
+                if attempt == MAX_RETRIES:
+                    raise
+                delay = RETRY_BASE_DELAY * (attempt + 1)
+                logger.warning(
+                    "Rate limited (429), retrying in %ds (attempt %d/%d)",
+                    delay, attempt + 1, MAX_RETRIES,
+                )
+                await asyncio.sleep(delay)
+        raise RuntimeError("Unreachable")  # pragma: no cover
 
     def _convert_tools(self, tools: list[dict]) -> list[dict]:
         """Convert our tool format to Anthropic's format."""

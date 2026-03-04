@@ -20,7 +20,6 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.5-flash"
     claude_model: str = "claude-sonnet-4-20250514"
     claude_web_search: bool = True
-    claude_web_fetch: bool = True
 
     # Paths
     workspace_path: Path = Path("workspace")
