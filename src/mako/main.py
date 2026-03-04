@@ -42,6 +42,8 @@ def create_provider(settings) -> Provider:
         return ClaudeProvider(
             api_key=settings.anthropic_api_key,
             model=settings.claude_model,
+            web_search=settings.claude_web_search,
+            web_fetch=settings.claude_web_fetch,
         )
     else:
         if not settings.gemini_api_key:
@@ -75,12 +77,18 @@ def create_agent(settings) -> tuple[Agent, ConversationStore, ToolRegistry]:
     registry = ToolRegistry(security)
 
     # Register built-in tools
-    registry.register(
-        name=web_fetch.TOOL_NAME,
-        description=web_fetch.TOOL_DESCRIPTION,
-        parameters=web_fetch.TOOL_PARAMETERS,
-        handler=web_fetch.web_fetch,
+    # Skip local web_fetch when Claude's server-side web_fetch replaces it.
+    # Both use the name "web_fetch" — they must not both be active at once.
+    use_server_fetch = (
+        settings.default_provider == "claude" and settings.claude_web_fetch
     )
+    if not use_server_fetch:
+        registry.register(
+            name=web_fetch.TOOL_NAME,
+            description=web_fetch.TOOL_DESCRIPTION,
+            parameters=web_fetch.TOOL_PARAMETERS,
+            handler=web_fetch.web_fetch,
+        )
     registry.register(
         name=shell.TOOL_NAME,
         description=shell.TOOL_DESCRIPTION,
