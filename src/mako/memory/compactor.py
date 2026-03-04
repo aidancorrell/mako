@@ -36,6 +36,9 @@ def count_message_tokens(messages: list[Message]) -> int:
         for tc in msg.tool_calls:
             total += estimate_tokens(tc.name)
             total += estimate_tokens(json.dumps(tc.arguments))
+        # Count raw_content blocks (server-side tool results from Claude)
+        if msg.raw_content:
+            total += estimate_tokens(json.dumps(msg.raw_content))
     return total
 
 
@@ -134,6 +137,9 @@ class ContextCompactor:
                 if len(msg.content) > 100:
                     preview += "..."
                 lines.append(f"[Tool {msg.name} result: {preview}]")
+            elif msg.role == "assistant" and msg.raw_content and not msg.content:
+                # Server-side tool response (e.g. Claude web search) with no text
+                lines.append("[Server-side tool execution (web search/fetch)]")
             else:
                 lines.append(f"{msg.role.title()}: {msg.content}")
         return "\n".join(lines)
