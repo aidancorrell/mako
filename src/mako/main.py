@@ -77,7 +77,8 @@ def create_agent(settings) -> tuple[Agent, ConversationStore, ToolRegistry]:
     registry = ToolRegistry(security)
 
     # Register built-in tools
-    # Skip local web_fetch when Claude's server-side web tools replace it
+    # Skip local web_fetch when Claude's server-side web_fetch replaces it.
+    # Both use the name "web_fetch" — they must not both be active at once.
     use_server_fetch = (
         settings.default_provider == "claude" and settings.claude_web_fetch
     )

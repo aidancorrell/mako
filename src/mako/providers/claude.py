@@ -124,6 +124,12 @@ class ClaudeProvider(Provider):
             kwargs["messages"] = conversation
             response = await self._client.messages.create(**kwargs)
 
+        if response.stop_reason == "pause_turn":
+            logger.warning(
+                "Claude still paused after %d continuations — response may be incomplete",
+                MAX_PAUSE_CONTINUATIONS,
+            )
+
         return self._parse_response(response)
 
     def _convert_tools(self, tools: list[dict]) -> list[dict]:
