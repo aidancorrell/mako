@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     default_provider: str = "gemini"
     gemini_model: str = "gemini-2.5-flash"
-    claude_model: str = "claude-sonnet-4-20250514"
+    claude_model: str = "claude-haiku-4-5-20251001"
     claude_web_search: bool = True
 
     # Paths
