@@ -23,7 +23,7 @@ TOOL_PARAMETERS = {
     "required": ["url"],
 }
 
-MAX_CONTENT_LENGTH = 8000  # Characters to return to the LLM
+MAX_CONTENT_LENGTH = 3000  # Characters to return to the LLM
 MAX_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MB max download
 
 
