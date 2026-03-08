@@ -30,6 +30,7 @@ def setup_logging() -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("anthropic").setLevel(logging.WARNING)
+    logging.getLogger("discord").setLevel(logging.WARNING)
 
 
 def create_provider(settings) -> Provider:
@@ -145,39 +146,75 @@ async def connect_mcp(settings, registry: ToolRegistry) -> list:
     return clients
 
 
-async def run_telegram_mode(agent: Agent, store: ConversationStore, settings) -> None:
-    """Run Mako in Telegram bot mode."""
-    if not settings.telegram_bot_token:
-        print("Error: MAKO_TELEGRAM_BOT_TOKEN not set")
-        sys.exit(1)
+async def run_channels(agent: Agent, store: ConversationStore, settings) -> None:
+    """Run Mako with one or both chat channels (Telegram, Discord)."""
+    use_telegram = "--telegram" in sys.argv or "--all" in sys.argv
+    use_discord = "--discord" in sys.argv or "--all" in sys.argv
 
-    from mako.channels.telegram import TelegramChannel
+    channels = []
+    telegram_bot = None
+    discord_channel = None
 
-    allowed = settings.telegram_allowed_chat_ids
-    if not allowed:
-        print(
-            "Error: MAKO_TELEGRAM_ALLOWED_CHAT_IDS_STR not set. "
-            "Refusing to start Telegram bot without an allowlist."
+    if use_telegram:
+        if not settings.telegram_bot_token:
+            print("Error: MAKO_TELEGRAM_BOT_TOKEN not set")
+            sys.exit(1)
+
+        from mako.channels.telegram import TelegramChannel
+
+        allowed = settings.telegram_allowed_chat_ids
+        if not allowed:
+            print(
+                "Error: MAKO_TELEGRAM_ALLOWED_CHAT_IDS_STR not set. "
+                "Refusing to start Telegram bot without an allowlist."
+            )
+            sys.exit(1)
+
+        tg = TelegramChannel(
+            token=settings.telegram_bot_token,
+            agent=agent,
+            store=store,
+            allowed_chat_ids=allowed,
+            context=agent.context,
         )
-        sys.exit(1)
+        await tg.run()
+        channels.append(tg)
+        telegram_bot = tg._app.bot
 
-    channel = TelegramChannel(
-        token=settings.telegram_bot_token,
-        agent=agent,
-        store=store,
-        allowed_chat_ids=allowed,
-        context=agent.context,
-    )
+    if use_discord:
+        if not settings.discord_bot_token:
+            print("Error: MAKO_DISCORD_BOT_TOKEN not set")
+            sys.exit(1)
 
-    await channel.run()
+        from mako.channels.discord import DiscordChannel
 
-    # Start scheduler for cron jobs (uses the bot to deliver messages)
+        allowed = settings.discord_allowed_user_ids
+        if not allowed:
+            print(
+                "Error: MAKO_DISCORD_ALLOWED_USER_IDS_STR not set. "
+                "Refusing to start Discord bot without an allowlist."
+            )
+            sys.exit(1)
+
+        dc = DiscordChannel(
+            token=settings.discord_bot_token,
+            agent=agent,
+            store=store,
+            allowed_user_ids=allowed,
+            context=agent.context,
+        )
+        asyncio.create_task(dc.run())
+        channels.append(dc)
+        discord_channel = dc
+
+    # Start scheduler for cron jobs
     jobs = load_jobs(settings.jobs_config_path)
     scheduler = Scheduler(
         jobs=jobs,
         agent=agent,
-        bot=channel._app.bot,
         store=store,
+        telegram_bot=telegram_bot,
+        discord_channel=discord_channel,
     )
     await scheduler.start()
 
@@ -189,7 +226,8 @@ async def run_telegram_mode(agent: Agent, store: ConversationStore, settings) ->
         pass
     finally:
         await scheduler.stop()
-        await channel.stop()
+        for ch in channels:
+            await ch.stop()
 
 
 async def async_main() -> None:
@@ -201,8 +239,8 @@ async def async_main() -> None:
     mcp_clients = await connect_mcp(settings, registry)
 
     try:
-        if "--telegram" in sys.argv:
-            await run_telegram_mode(agent, store, settings)
+        if any(flag in sys.argv for flag in ("--telegram", "--discord", "--all")):
+            await run_channels(agent, store, settings)
         else:
             await run_cli(agent, store)
     finally:

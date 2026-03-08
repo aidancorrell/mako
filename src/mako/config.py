@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_allowed_chat_ids_str: str = ""
 
+    # Discord
+    discord_bot_token: str = ""
+    discord_allowed_user_ids_str: str = ""
+
     # MCP servers config file path (Phase 5)
     mcp_config_path: Path = Path("mcp_servers.json")
 
@@ -64,6 +68,12 @@ class Settings(BaseSettings):
         if not self.telegram_allowed_chat_ids_str.strip():
             return []
         return [int(x.strip()) for x in self.telegram_allowed_chat_ids_str.split(",") if x.strip()]
+
+    @property
+    def discord_allowed_user_ids(self) -> list[int]:
+        if not self.discord_allowed_user_ids_str.strip():
+            return []
+        return [int(x.strip()) for x in self.discord_allowed_user_ids_str.split(",") if x.strip()]
 
     @field_validator("workspace_path", mode="after")
     @classmethod

@@ -1,61 +1,61 @@
 %%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1a1a2e', 'primaryTextColor': '#e0e0e0', 'primaryBorderColor': '#4a9eff', 'lineColor': '#4a9eff', 'secondaryColor': '#16213e', 'tertiaryColor': '#0f3460', 'background': '#0d1117', 'mainBkg': '#1a1a2e', 'nodeBorder': '#4a9eff', 'clusterBkg': '#16213e', 'clusterBorder': '#4a9eff', 'titleColor': '#e0e0e0', 'edgeLabelBackground': '#1a1a2e'}}}%%
 
-flowchart TB
-    subgraph Channels["📡 Channels"]
-        CLI["CLI REPL"]
-        TG["Telegram Bot"]
-        CRON["⏰ Cron Scheduler"]
-    end
+flowchart TD
+    subgraph Docker["All runs inside a hardened Docker container — read-only rootfs, non-root user, all caps dropped, HTTPS-only egress"]
 
-    subgraph Agent["🔄 Agent Loop · ReAct"]
-        CTX["Context Assembler<br/><i>SOUL.md + MEMORY.md + History</i>"]
-        LLM["LLM Provider<br/><i>Gemini Flash · Claude Sonnet</i>"]
+        subgraph Channels["Channels"]
+            CLI["CLI REPL"]
+            TG["Telegram Bot"]
+            CRON["Cron Scheduler"]
+        end
+
+        subgraph Memory["Memory"]
+            MD["Personality Files\nSOUL · IDENTITY · MEMORY"]
+            SQL["SQLite History\nWAL mode"]
+            COMPACT["Context Compaction\nauto-summarize at token limit"]
+        end
+
+        CTX["Context Assembler\nPersonality + Memory + History"]
+        LLM["LLM Provider\nGemini Flash · Claude Sonnet"]
         DECIDE{Tool calls?}
-        RESPOND["💬 Final Response"]
-    end
+        RESPOND["Final Response"]
 
-    subgraph Security["🔒 SecurityGuard · Gates Every Tool Call"]
-        ALLOW["Command Allowlist"]
-        JAIL["Workspace Jail"]
-        SSRF["SSRF Protection"]
-        RATE["Rate Limiting"]
-        AUDIT["Audit Log"]
-    end
+        subgraph Security["SecurityGuard — gates every tool call"]
+            direction LR
+            ALLOW["Command\nAllowlist"]
+            JAIL["Workspace\nJail"]
+            SSRF["SSRF\nProtection"]
+            RATE["Rate\nLimiting"]
+            AUDIT["Audit\nLog"]
+        end
 
-    subgraph Tools["🔧 Tools"]
-        WEB["web_fetch<br/><i>HTTPS · SSRF-protected</i>"]
-        SHELL["shell<br/><i>allowlisted commands</i>"]
-        FS["read/write file<br/><i>workspace-jailed</i>"]
-        MCP["MCP Client<br/><i>any MCP server</i>"]
-    end
+        subgraph Tools["Tools"]
+            direction LR
+            WEB["web_fetch\nHTTPS · SSRF-protected"]
+            SHELL["shell\nallowlisted only"]
+            FS["read/write file\nworkspace-jailed"]
+            MCP["MCP Client\nany MCP server"]
+        end
 
-    subgraph Memory["🧠 Memory"]
-        SQL["SQLite History<br/><i>WAL mode</i>"]
-        MD["Personality Files<br/><i>SOUL · IDENTITY · MEMORY</i>"]
-        COMPACT["Context Compaction<br/><i>auto-summarize at token limit</i>"]
-    end
-
-    subgraph Docker["🐳 Docker · Hardened Container"]
-        RO["Read-only rootfs"]
-        NONROOT["Non-root user"]
-        CAPS["All caps dropped"]
-        NET["HTTPS-only egress"]
     end
 
     CLI --> CTX
     TG --> CTX
     CRON --> CTX
+    Memory -.-> CTX
     CTX --> LLM
     LLM --> DECIDE
-    DECIDE -- No --> RESPOND
-    DECIDE -- Yes --> Security
+    DECIDE -- "No" --> RESPOND
+    DECIDE -- "Yes" --> Security
     Security --> Tools
-    Tools -- result --> LLM
-    Memory -.-> CTX
+    Tools -- "result" --> LLM
 
+    style Docker fill:#0a1628,stroke:#4a9eff,color:#8899aa
     style Channels fill:#0f3460,stroke:#4a9eff,color:#e0e0e0
-    style Agent fill:#1a1a2e,stroke:#4a9eff,color:#e0e0e0
+    style Memory fill:#1a1a2e,stroke:#4a9eff,color:#e0e0e0
     style Security fill:#3d0000,stroke:#ff4444,color:#e0e0e0
     style Tools fill:#16213e,stroke:#4a9eff,color:#e0e0e0
-    style Memory fill:#1a1a2e,stroke:#4a9eff,color:#e0e0e0
-    style Docker fill:#0a1628,stroke:#4a9eff,color:#e0e0e0
+    style CTX fill:#1a1a2e,stroke:#4a9eff,color:#e0e0e0
+    style LLM fill:#1a1a2e,stroke:#4a9eff,color:#e0e0e0
+    style DECIDE fill:#1a1a2e,stroke:#4a9eff,color:#e0e0e0
+    style RESPOND fill:#0f3460,stroke:#4a9eff,color:#e0e0e0
