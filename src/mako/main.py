@@ -151,6 +151,7 @@ async def run_telegram_mode(agent: Agent, store: ConversationStore, settings) ->
         agent=agent,
         store=store,
         allowed_chat_ids=allowed,
+        context=agent.context,
     )
 
     await channel.run()
