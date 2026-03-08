@@ -40,6 +40,16 @@ class Settings(BaseSettings):
     # Scheduled jobs config
     jobs_config_path: Path = Path("jobs.json")
 
+    # Tool limits
+    max_shell_output_length: int = 8000
+    max_web_fetch_content_length: int = 3000
+    max_web_fetch_response_bytes: int = 5 * 1024 * 1024  # 5 MB
+
+    # Claude provider
+    claude_max_pause_continuations: int = 5
+    claude_max_retries: int = 3
+    claude_retry_base_delay: int = 60  # seconds
+
     # Context compaction
     context_limit_tokens: int = 200_000
     compaction_trigger_ratio: float = 0.75

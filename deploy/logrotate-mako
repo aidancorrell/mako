@@ -1,0 +1,16 @@
+# Logrotate config for Mako audit log
+# Install: sudo cp deploy/logrotate-mako /etc/logrotate.d/mako
+#
+# Assumes audit log lives at /home/mako/mako/audit/audit.log
+# Adjust the path if your deployment differs.
+
+/home/mako/mako/audit/audit.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    size 10M
+    create 0640 mako mako
+}

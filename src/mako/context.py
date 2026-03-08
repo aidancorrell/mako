@@ -28,14 +28,22 @@ class ContextAssembler:
         self.workspace_path = workspace_path
         self._personality = load_personality(workspace_path)
         self._memory = load_memory(workspace_path)
+        self._cached_system_prompt: str | None = None
 
     def reload(self) -> None:
         """Reload personality and memory files from disk."""
         self._personality = load_personality(self.workspace_path)
         self._memory = load_memory(self.workspace_path)
+        self._cached_system_prompt = None  # Invalidate cache
 
     def build_system_prompt(self) -> str:
-        """Build the full system prompt with personality and memory."""
+        """Build the full system prompt with personality and memory.
+
+        Cached after first build; invalidated by reload().
+        """
+        if self._cached_system_prompt is not None:
+            return self._cached_system_prompt
+
         sections: list[str] = []
 
         if self._personality:
@@ -46,7 +54,8 @@ class ContextAssembler:
         if self._memory:
             sections.append(f"## Your Memory\n\n{self._memory}")
 
-        return "\n\n---\n\n".join(sections)
+        self._cached_system_prompt = "\n\n---\n\n".join(sections)
+        return self._cached_system_prompt
 
     def build_messages(
         self,
