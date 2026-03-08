@@ -43,6 +43,9 @@ def create_provider(settings) -> Provider:
             api_key=settings.anthropic_api_key,
             model=settings.claude_model,
             web_search=settings.claude_web_search,
+            max_pause_continuations=settings.claude_max_pause_continuations,
+            max_retries=settings.claude_max_retries,
+            retry_base_delay=settings.claude_retry_base_delay,
         )
     else:
         if not settings.gemini_api_key:
@@ -74,6 +77,12 @@ def create_agent(settings) -> tuple[Agent, ConversationStore, ToolRegistry]:
 
     # Tool registry
     registry = ToolRegistry(security)
+
+    # Wire settings into tools
+    shell._security = security
+    shell._max_output_length = settings.max_shell_output_length
+    web_fetch._max_content_length = settings.max_web_fetch_content_length
+    web_fetch._max_response_bytes = settings.max_web_fetch_response_bytes
 
     # Register built-in tools
     registry.register(
@@ -127,7 +136,13 @@ async def connect_mcp(settings, registry: ToolRegistry) -> list:
         return []
 
     from mako.tools.mcp import connect_mcp_servers
-    return await connect_mcp_servers(servers, registry)
+    clients, failed = await connect_mcp_servers(servers, registry)
+    if failed:
+        logger.warning(
+            "MCP servers failed to start: %s — their tools are unavailable",
+            ", ".join(failed),
+        )
+    return clients
 
 
 async def run_telegram_mode(agent: Agent, store: ConversationStore, settings) -> None:

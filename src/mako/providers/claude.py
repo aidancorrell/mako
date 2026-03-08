@@ -27,9 +27,15 @@ class ClaudeProvider(Provider):
         api_key: str,
         model: str = "claude-sonnet-4-20250514",
         web_search: bool = False,
+        max_pause_continuations: int = MAX_PAUSE_CONTINUATIONS,
+        max_retries: int = MAX_RETRIES,
+        retry_base_delay: int = RETRY_BASE_DELAY,
     ) -> None:
         self.model = model
         self.web_search = web_search
+        self.max_pause_continuations = max_pause_continuations
+        self.max_retries = max_retries
+        self.retry_base_delay = retry_base_delay
         self._client = anthropic.AsyncAnthropic(api_key=api_key)
 
     @property
@@ -110,9 +116,9 @@ class ClaudeProvider(Provider):
 
         # Handle pause_turn: the API paused a long-running turn, continue it
         continuations = 0
-        while response.stop_reason == "pause_turn" and continuations < MAX_PAUSE_CONTINUATIONS:
+        while response.stop_reason == "pause_turn" and continuations < self.max_pause_continuations:
             continuations += 1
-            logger.debug("Claude pause_turn, continuing (%d/%d)", continuations, MAX_PAUSE_CONTINUATIONS)
+            logger.debug("Claude pause_turn, continuing (%d/%d)", continuations, self.max_pause_continuations)
             conversation.append({
                 "role": "assistant",
                 "content": _serialize_content(response.content),
@@ -123,23 +129,23 @@ class ClaudeProvider(Provider):
         if response.stop_reason == "pause_turn":
             logger.warning(
                 "Claude still paused after %d continuations — response may be incomplete",
-                MAX_PAUSE_CONTINUATIONS,
+                self.max_pause_continuations,
             )
 
         return self._parse_response(response)
 
     async def _api_call_with_retry(self, **kwargs) -> anthropic.types.Message:
         """Call the API with retry + backoff on 429 rate limit errors."""
-        for attempt in range(MAX_RETRIES + 1):
+        for attempt in range(self.max_retries + 1):
             try:
                 return await self._client.messages.create(**kwargs)
             except anthropic.RateLimitError:
-                if attempt == MAX_RETRIES:
+                if attempt == self.max_retries:
                     raise
-                delay = RETRY_BASE_DELAY * (attempt + 1)
+                delay = self.retry_base_delay * (attempt + 1)
                 logger.warning(
                     "Rate limited (429), retrying in %ds (attempt %d/%d)",
-                    delay, attempt + 1, MAX_RETRIES,
+                    delay, attempt + 1, self.max_retries,
                 )
                 await asyncio.sleep(delay)
         raise RuntimeError("Unreachable")  # pragma: no cover

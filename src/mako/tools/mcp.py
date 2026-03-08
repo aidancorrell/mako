@@ -90,10 +90,13 @@ class MCPClient:
 
     async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> str:
         """Call a tool on the MCP server and return the result as text."""
-        result = await self._send_request("tools/call", {
-            "name": tool_name,
-            "arguments": arguments,
-        })
+        from mako.tools.retry import retry_with_backoff
+
+        result = await retry_with_backoff(
+            self._send_request, "tools/call",
+            {"name": tool_name, "arguments": arguments},
+            retryable=(TimeoutError, OSError, ConnectionError),
+        )
 
         # MCP tool results are an array of content blocks
         content = result.get("content", [])
@@ -211,7 +214,7 @@ class MCPClient:
 async def connect_mcp_servers(
     servers: list[dict],
     registry: ToolRegistry,
-) -> list[MCPClient]:
+) -> tuple[list[MCPClient], list[str]]:
     """Connect to configured MCP servers and register their tools.
 
     Args:
@@ -219,9 +222,10 @@ async def connect_mcp_servers(
         registry: The tool registry to register discovered tools into.
 
     Returns:
-        List of connected MCPClient instances (caller should stop them on shutdown).
+        Tuple of (connected clients, failed server names).
     """
     clients: list[MCPClient] = []
+    failed: list[str] = []
 
     for server_config in servers:
         name = server_config["name"]
@@ -258,6 +262,7 @@ async def connect_mcp_servers(
 
         except Exception as e:
             logger.error("Failed to connect MCP server '%s': %s", name, e)
+            failed.append(name)
             await client.stop()
 
-    return clients
+    return clients, failed
