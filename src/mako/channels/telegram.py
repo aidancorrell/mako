@@ -12,6 +12,7 @@ from telegram.ext import (
 )
 
 from mako.agent import Agent
+from mako.context import ContextAssembler
 from mako.memory.store import ConversationStore
 from mako.providers.base import Message
 
@@ -60,9 +61,11 @@ class TelegramChannel:
         agent: Agent,
         store: ConversationStore,
         allowed_chat_ids: list[int] | None = None,
+        context: ContextAssembler | None = None,
     ) -> None:
         self.agent = agent
         self.store = store
+        self.context = context
         self.allowed_chat_ids = set(allowed_chat_ids) if allowed_chat_ids else None
 
         # Per-chat session tracking and history
@@ -72,6 +75,7 @@ class TelegramChannel:
         self._app = Application.builder().token(token).build()
         self._app.add_handler(CommandHandler("start", self._handle_start))
         self._app.add_handler(CommandHandler("new", self._handle_new))
+        self._app.add_handler(CommandHandler("reload", self._handle_reload))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
 
     def _is_allowed(self, chat_id: int) -> bool:
@@ -100,7 +104,8 @@ class TelegramChannel:
         self._get_session(chat_id)
         await update.message.reply_text(
             "Hey, I'm Mako. Send me a message and I'll do my best to help.\n\n"
-            "/new — start a fresh conversation"
+            "/new — start a fresh conversation\n"
+            "/reload — reload personality and memory files"
         )
 
     async def _handle_new(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -114,6 +119,19 @@ class TelegramChannel:
         self._sessions[chat_id] = session_id
         self._histories[chat_id] = []
         await update.message.reply_text("Fresh start. What's up?")
+
+    async def _handle_reload(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not update.effective_chat or not update.message:
+            return
+        chat_id = update.effective_chat.id
+        if not self._is_allowed(chat_id):
+            return
+        if self.context is None:
+            await update.message.reply_text("Reload not available.")
+            return
+        self.context.reload()
+        logger.info("Reloaded personality/memory files via /reload from chat %d", chat_id)
+        await update.message.reply_text("Reloaded personality and memory files.")
 
     async def _handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.effective_chat or not update.message or not update.message.text:
