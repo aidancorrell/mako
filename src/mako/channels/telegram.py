@@ -12,6 +12,7 @@ from telegram.ext import (
 )
 
 from mako.agent import Agent
+from mako.channels.common import split_message
 from mako.context import ContextAssembler
 from mako.memory.store import ConversationStore
 from mako.providers.base import Message
@@ -19,37 +20,6 @@ from mako.providers.base import Message
 logger = logging.getLogger(__name__)
 
 TELEGRAM_MAX_LENGTH = 4096
-
-
-def _split_message(text: str, max_length: int = TELEGRAM_MAX_LENGTH) -> list[str]:
-    """Split a long message into chunks that fit Telegram's limit.
-
-    Tries to split on newlines first, then on spaces, then hard-cuts.
-    """
-    if len(text) <= max_length:
-        return [text]
-
-    chunks: list[str] = []
-    remaining = text
-
-    while remaining:
-        if len(remaining) <= max_length:
-            chunks.append(remaining)
-            break
-
-        # Try to split at a newline
-        split_at = remaining.rfind("\n", 0, max_length)
-        if split_at == -1 or split_at < max_length // 2:
-            # Try to split at a space
-            split_at = remaining.rfind(" ", 0, max_length)
-        if split_at == -1 or split_at < max_length // 2:
-            # Hard cut
-            split_at = max_length
-
-        chunks.append(remaining[:split_at])
-        remaining = remaining[split_at:].lstrip()
-
-    return chunks
 
 
 class TelegramChannel:
@@ -168,7 +138,7 @@ class TelegramChannel:
             self._histories[chat_id] = history
 
             # Send response (split if needed)
-            for chunk in _split_message(response):
+            for chunk in split_message(response, TELEGRAM_MAX_LENGTH):
                 await update.message.reply_text(chunk)
 
         except Exception as e:

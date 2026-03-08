@@ -43,4 +43,4 @@ USER mako
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import mako; print('ok')" || exit 1
 
-ENTRYPOINT ["python", "-m", "mako.main", "--telegram"]
+ENTRYPOINT ["python", "-m", "mako.main", "--all"]
