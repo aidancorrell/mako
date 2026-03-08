@@ -6,8 +6,15 @@ This module just runs it and captures output.
 
 import asyncio
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mako.security import SecurityGuard
 
 logger = logging.getLogger(__name__)
+
+# Set by main.py at startup so shell can reuse parsed args from SecurityGuard
+_security: "SecurityGuard | None" = None
 
 TOOL_NAME = "shell"
 TOOL_DESCRIPTION = (
@@ -26,7 +33,8 @@ TOOL_PARAMETERS = {
     "required": ["command"],
 }
 
-MAX_OUTPUT_LENGTH = 8000
+MAX_OUTPUT_LENGTH = 8000  # Default; overridden via _max_output_length if set
+_max_output_length: int | None = None  # Set by main.py from settings
 
 
 async def shell(command: str) -> str:
@@ -37,12 +45,15 @@ async def shell(command: str) -> str:
     We use create_subprocess_exec (not _shell) so the OS executes the
     command directly — no shell interpretation of pipes, redirects, etc.
     """
-    import shlex
-
-    try:
-        args = shlex.split(command)
-    except ValueError as e:
-        return f"Error: failed to parse command: {e}"
+    # Reuse parsed args from SecurityGuard (already validated in pre_tool_call)
+    if _security is not None:
+        args = _security.validate_command(command)
+    else:
+        import shlex
+        try:
+            args = shlex.split(command)
+        except ValueError as e:
+            return f"Error: failed to parse command: {e}"
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -63,7 +74,8 @@ async def shell(command: str) -> str:
     if not output.strip():
         output = f"(Command exited with code {proc.returncode}, no output)"
 
-    if len(output) > MAX_OUTPUT_LENGTH:
-        output = output[:MAX_OUTPUT_LENGTH] + f"\n\n[Truncated]"
+    max_len = _max_output_length or MAX_OUTPUT_LENGTH
+    if len(output) > max_len:
+        output = output[:max_len] + "\n\n[Truncated]"
 
     return output.strip()

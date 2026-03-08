@@ -8,6 +8,8 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from mako.tools.retry import retry_with_backoff
+
 logger = logging.getLogger(__name__)
 
 TOOL_NAME = "web_fetch"
@@ -23,8 +25,15 @@ TOOL_PARAMETERS = {
     "required": ["url"],
 }
 
-MAX_CONTENT_LENGTH = 3000  # Characters to return to the LLM
-MAX_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MB max download
+MAX_CONTENT_LENGTH = 3000  # Default; overridden via module-level vars if set
+MAX_RESPONSE_BYTES = 5 * 1024 * 1024  # Default; overridden via module-level vars if set
+_max_content_length: int | None = None  # Set by main.py from settings
+_max_response_bytes: int | None = None  # Set by main.py from settings
+
+
+def _is_private_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Check if an IP address is private, loopback, link-local, or reserved."""
+    return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
 
 
 def _validate_url(url: str) -> str:
@@ -54,13 +63,41 @@ def _validate_url(url: str) -> str:
 
     for family, _, _, _, sockaddr in addrinfo:
         ip = ipaddress.ip_address(sockaddr[0])
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+        if _is_private_ip(ip):
             raise ValueError(
                 f"URL resolves to private/reserved IP ({ip}). "
                 "Requests to internal networks are blocked."
             )
 
     return url
+
+
+def _validate_response_ip(resp: httpx.Response) -> None:
+    """Post-connect validation: check the actual IP we connected to.
+
+    Closes the DNS rebinding TOCTOU window by verifying the connection's
+    peer address after the request completes.
+    """
+    # httpx exposes the network stream via extensions
+    stream = resp.extensions.get("network_stream")
+    if stream is None:
+        return  # Can't verify — connection already closed or pooled
+
+    server_addr = getattr(stream, "get_extra_info", lambda _: None)("server_addr")
+    if server_addr is None:
+        # Try peername (older httpx / httpcore)
+        server_addr = getattr(stream, "get_extra_info", lambda _: None)("peername")
+
+    if server_addr and isinstance(server_addr, tuple) and len(server_addr) >= 2:
+        try:
+            ip = ipaddress.ip_address(server_addr[0])
+            if _is_private_ip(ip):
+                raise ValueError(
+                    f"DNS rebinding detected: connected to private IP ({ip}). "
+                    "Request blocked."
+                )
+        except (ValueError, TypeError):
+            pass  # Can't parse — not a rebinding risk worth blocking on
 
 
 def _strip_html(html: str) -> str:
@@ -78,10 +115,8 @@ def _strip_html(html: str) -> str:
     return text.strip()
 
 
-async def web_fetch(url: str) -> str:
-    """Fetch a URL and return its text content."""
-    url = _validate_url(url)
-
+async def _fetch_with_redirects(url: str) -> httpx.Response:
+    """Fetch a URL, following redirects with SSRF validation on each hop."""
     async with httpx.AsyncClient(
         timeout=30,
         follow_redirects=False,
@@ -89,9 +124,11 @@ async def web_fetch(url: str) -> str:
         max_redirects=0,
     ) as client:
         resp = await client.get(url)
+        _validate_response_ip(resp)
 
         # Handle redirects manually with SSRF check on each hop
         redirects = 0
+        visited = {url}
         while resp.is_redirect and redirects < 5:
             redirects += 1
             location = resp.headers.get("location", "")
@@ -99,15 +136,31 @@ async def web_fetch(url: str) -> str:
                 break
             location = urljoin(url, location)
             location = _validate_url(location)
+            if location in visited:
+                break  # Circular redirect detected
+            visited.add(location)
             url = location
             resp = await client.get(location)
+            _validate_response_ip(resp)
 
         resp.raise_for_status()
+        return resp
+
+
+async def web_fetch(url: str) -> str:
+    """Fetch a URL and return its text content."""
+    url = _validate_url(url)
+
+    resp = await retry_with_backoff(
+        _fetch_with_redirects, url,
+        retryable=(httpx.TransportError, TimeoutError, OSError),
+    )
 
     # Check response size
+    max_bytes = _max_response_bytes or MAX_RESPONSE_BYTES
     content_length = len(resp.content)
-    if content_length > MAX_RESPONSE_BYTES:
-        return f"Error: Response too large ({content_length} bytes, max {MAX_RESPONSE_BYTES})"
+    if content_length > max_bytes:
+        return f"Error: Response too large ({content_length} bytes, max {max_bytes})"
 
     content_type = resp.headers.get("content-type", "")
     text = resp.text
@@ -115,7 +168,8 @@ async def web_fetch(url: str) -> str:
     if "html" in content_type:
         text = _strip_html(text)
 
-    if len(text) > MAX_CONTENT_LENGTH:
-        text = text[:MAX_CONTENT_LENGTH] + f"\n\n[Truncated — {len(resp.text)} chars total]"
+    max_chars = _max_content_length or MAX_CONTENT_LENGTH
+    if len(text) > max_chars:
+        text = text[:max_chars] + f"\n\n[Truncated — {len(resp.text)} chars total]"
 
     return text
