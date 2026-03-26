@@ -1,8 +1,10 @@
-"""Cron-like job scheduler — runs scheduled prompts and delivers via Telegram.
+"""Cron-like job scheduler — runs scheduled prompts and delivers via configured channels.
 
 Minimal implementation: checks every 60s if any job's cron expression matches
-the current time, runs the agent, and sends the result to Telegram.
+the current time, runs the agent, and sends the result to Telegram and/or Discord.
 """
+
+from __future__ import annotations
 
 import asyncio
 import json
@@ -10,7 +12,13 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
+
+if TYPE_CHECKING:
+    from mako.channels.discord import DiscordChannel
+
+from mako.channels.common import split_message
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +31,8 @@ class Job:
     cron: str  # "minute hour day month weekday"
     tz: str  # e.g. "America/New_York"
     prompt: str
-    chat_id: int  # Telegram chat ID to deliver to
+    chat_id: int = 0  # Telegram chat ID to deliver to
+    discord_user_id: int = 0  # Discord user ID to deliver to
     enabled: bool = True
     timeout_seconds: int = 300
 
@@ -101,7 +110,8 @@ def load_jobs(path: Path) -> list[Job]:
                 cron=j["cron"],
                 tz=j.get("tz", "UTC"),
                 prompt=j["prompt"],
-                chat_id=int(j["chat_id"]),
+                chat_id=int(j.get("chat_id", 0)),
+                discord_user_id=int(j.get("discord_user_id", 0)),
                 enabled=j.get("enabled", True),
                 timeout_seconds=j.get("timeout_seconds", 300),
             ))
@@ -115,11 +125,19 @@ def load_jobs(path: Path) -> list[Job]:
 class Scheduler:
     """Runs scheduled jobs on a 60-second check interval."""
 
-    def __init__(self, jobs: list[Job], agent, bot, store) -> None:
+    def __init__(
+        self,
+        jobs: list[Job],
+        agent,
+        store,
+        telegram_bot=None,
+        discord_channel: DiscordChannel | None = None,
+    ) -> None:
         self.jobs = [j for j in jobs if j.enabled]
         self.agent = agent
-        self.bot = bot  # telegram.Bot instance
         self.store = store
+        self.telegram_bot = telegram_bot
+        self.discord_channel = discord_channel
         self._task: asyncio.Task | None = None
 
     async def start(self) -> None:
@@ -170,7 +188,7 @@ class Scheduler:
             asyncio.create_task(self._execute_job(job))
 
     async def _execute_job(self, job: Job) -> None:
-        """Execute a job: run agent and deliver result via Telegram."""
+        """Execute a job: run agent and deliver result to configured channels."""
         session_id = self.store.create_session(title=f"Job: {job.name}")
 
         try:
@@ -187,42 +205,40 @@ class Scheduler:
             self.store.save_message(session_id, "user", f"[Scheduled: {job.name}]")
             self.store.save_message(session_id, "assistant", response)
 
-            # Deliver via Telegram
-            await self._send_telegram(job.chat_id, response)
+            # Deliver to configured channels
+            if job.chat_id and self.telegram_bot:
+                await self._send_telegram(job.chat_id, response)
+            if job.discord_user_id and self.discord_channel:
+                await self._send_discord(job.discord_user_id, response)
+
             logger.info("Job '%s' completed and delivered (%d chars)", job.name, len(response))
 
         except asyncio.TimeoutError:
             logger.error("Job '%s' timed out after %ds", job.name, job.timeout_seconds)
-            await self._send_telegram(
-                job.chat_id,
-                f"[Job '{job.name}' timed out after {job.timeout_seconds}s]",
-            )
+            error_msg = f"[Job '{job.name}' timed out after {job.timeout_seconds}s]"
+            if job.chat_id and self.telegram_bot:
+                await self._send_telegram(job.chat_id, error_msg)
+            if job.discord_user_id and self.discord_channel:
+                await self._send_discord(job.discord_user_id, error_msg)
         except Exception as e:
             logger.error("Job '%s' failed: %s", job.name, e, exc_info=True)
-            await self._send_telegram(
-                job.chat_id,
-                f"[Job '{job.name}' failed: {type(e).__name__}]",
-            )
+            error_msg = f"[Job '{job.name}' failed: {type(e).__name__}]"
+            if job.chat_id and self.telegram_bot:
+                await self._send_telegram(job.chat_id, error_msg)
+            if job.discord_user_id and self.discord_channel:
+                await self._send_discord(job.discord_user_id, error_msg)
 
     async def _send_telegram(self, chat_id: int, text: str) -> None:
         """Send a message to a Telegram chat, splitting if needed."""
-        max_len = 4096
         try:
-            if len(text) <= max_len:
-                await self.bot.send_message(chat_id=chat_id, text=text)
-            else:
-                # Split on newlines/spaces
-                remaining = text
-                while remaining:
-                    if len(remaining) <= max_len:
-                        await self.bot.send_message(chat_id=chat_id, text=remaining)
-                        break
-                    split_at = remaining.rfind("\n", 0, max_len)
-                    if split_at < max_len // 2:
-                        split_at = remaining.rfind(" ", 0, max_len)
-                    if split_at < max_len // 2:
-                        split_at = max_len
-                    await self.bot.send_message(chat_id=chat_id, text=remaining[:split_at])
-                    remaining = remaining[split_at:].lstrip()
+            for chunk in split_message(text, 4096):
+                await self.telegram_bot.send_message(chat_id=chat_id, text=chunk)
         except Exception as e:
             logger.error("Failed to send Telegram message to %d: %s", chat_id, e)
+
+    async def _send_discord(self, user_id: int, text: str) -> None:
+        """Send a DM to a Discord user, splitting if needed."""
+        try:
+            await self.discord_channel.send_message(user_id, text)
+        except Exception as e:
+            logger.error("Failed to send Discord message to %d: %s", user_id, e)
